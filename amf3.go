@@ -121,6 +121,87 @@ func AMF3_WriteObjectName(w Writer, name string) (n int, err error) {
 	return AMF3_WriteUTF8(w, name)
 }
 
+func AMF3_WriteAssociativeArray(w Writer, obj Object) (n int, err error) {
+	err = w.WriteByte(0x01) // Empty string
+	if err != nil {
+		return 0, err
+	}
+	n = 1
+	for key, value := range obj {
+		m, err := AMF3_WriteObjectName(w, key)
+		if err != nil {
+			return n, err
+		}
+		n += m
+		m, err = AMF3_WriteValue(w, value)
+		if err != nil {
+			return n, err
+		}
+		n += m
+	}
+
+	err = w.WriteByte(0x01) // Empty string
+	if err != nil {
+		return n, err
+	}
+	n += 1
+	return n, err
+}
+
+//Make AMF3_WriteTypedObject
+
+// Object's item order is uncertainty.
+func AMF3_WriteTypedObject(w Writer, obj TypedObject) (n int, err error) {
+
+	m := 0
+
+	if obj.ObjectType == "" {
+		return AMF3_WriteObject(w, obj.Object)
+	}
+	n, err = AMF3_WriteObjectMarker(w)
+	if err != nil {
+		return
+	}
+	if obj.ObjectType == "flex.messaging.io.ArrayCollection" {
+		w.WriteByte(0x07)
+		fmt.Println("ARRAY COLLECTION NOT IMPLEMENTED")
+	} else {
+
+		m, err = AMF3_WriteU29(w, uint32((len(obj.Object)<<4)|3))
+		n += m
+		m, err = AMF3_WriteObjectName(w, obj.ObjectType)
+		for key, _ := range obj.Object {
+			m, err = AMF3_WriteObjectName(w, key)
+			if err != nil {
+				return
+			}
+			n += m
+		}
+		for _, value := range obj.Object {
+			m, err = AMF3_WriteValue(w, value)
+			if err != nil {
+				return
+			}
+			n += m
+		}
+	}
+
+	// Write traits flag, Todo: traits class support
+	//err = w.WriteByte(0x0b)
+	//if err != nil {
+	//	return
+	//}
+	//n += 1
+	// Write empty class name
+	// m, err = AMF3_WriteUTF8(w, "")
+	// if err != nil {
+	// 	return
+	// }
+	// n += m
+	//m, err = AMF3_WriteObjectEndMarker(w)
+	return n, err
+}
+
 // Object's item order is uncertainty.
 func AMF3_WriteObject(w Writer, obj Object) (n int, err error) {
 	n, err = AMF3_WriteObjectMarker(w)
@@ -135,7 +216,7 @@ func AMF3_WriteObject(w Writer, obj Object) (n int, err error) {
 	}
 	n += 1
 	// Write empty class name
-	m, err = AMF3_WriteUTF8(w, "")
+	w.WriteByte(0x01)
 	if err != nil {
 		return
 	}
@@ -170,9 +251,11 @@ func AMF3_WriteValue(w Writer, value interface{}) (n int, err error) {
 	case reflect.Bool:
 		return AMF3_WriteBoolean(w, v.Bool())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return AMF3_WriteDouble(w, float64(v.Int()))
+		w.WriteByte(AMF3_INTEGER_MARKER)
+		return AMF3_WriteU29(w, uint32(v.Int()))
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return AMF3_WriteDouble(w, float64(v.Uint()))
+		w.WriteByte(AMF3_INTEGER_MARKER)
+		return AMF3_WriteU29(w, uint32(v.Int()))
 	case reflect.Float32, reflect.Float64:
 		return AMF3_WriteDouble(w, v.Float())
 	case reflect.Array:
@@ -276,6 +359,8 @@ func AMF3_WriteValue(w Writer, value interface{}) (n int, err error) {
 		return AMF3_WriteUndefined(w)
 	} else if vt, ok := value.(Object); ok {
 		return AMF3_WriteObject(w, vt)
+	} else if vt, ok := value.(TypedObject); ok {
+		return AMF3_WriteTypedObject(w, vt)
 	} else if vt, ok := value.([]interface{}); ok {
 		fmt.Printf("Todo: WriteValue: %+v\n", vt)
 	}

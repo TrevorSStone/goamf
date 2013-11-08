@@ -68,6 +68,11 @@ type Undefined struct{}
 // Object Type
 type Object map[string]interface{}
 
+type TypedObject struct {
+	Object
+	ObjectType string
+}
+
 // stringValues is a slice of reflect.Value holding *reflect.StringValue.
 // It implements the methods to sort by string.
 type stringValues []reflect.Value
