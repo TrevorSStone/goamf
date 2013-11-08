@@ -217,6 +217,7 @@ func AMF3_WriteObject(w Writer, obj Object) (n int, err error) {
 	n += 1
 	// Write empty class name
 	w.WriteByte(0x01)
+	n += 1
 	if err != nil {
 		return
 	}
