@@ -70,7 +70,10 @@ type Object map[string]interface{}
 
 type TypedObject struct {
 	Object
-	ObjectType string
+	ObjectType     string
+	Externalizable bool
+	Dynamic        bool
+	Members        []string
 }
 
 // stringValues is a slice of reflect.Value holding *reflect.StringValue.

@@ -396,9 +396,10 @@ func AMF3_ReadUTF8(r Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if length&uint32(0x01) != uint32(1) {
+	if length&uint32(0x01) == uint32(0) {
 		// Todo: reference
-		return "", errors.New("AMF3 reference unsupported")
+
+		return "TESTING", nil //errors.New("AMF3 reference unsupported")
 	}
 	length = length >> 1
 	if length == 0 {
@@ -458,45 +459,134 @@ func AMF3_ReadObject(r Reader) (obj Object, err error) {
 	if marker != AMF3_OBJECT_MARKER {
 		return nil, errors.New("Type error")
 	}
-	return AMF3_ReadObjectProperty(r)
+	objProp, err := AMF3_ReadObjectProperty(r)
+	return objProp.Object, err
 }
 
-func AMF3_ReadObjectProperty(r Reader) (Object, error) {
-	obj := make(Object)
+func AMF3_ReadOldObjectProperty(r Reader) (TypedObject, error) {
+	obj := TypedObject{
+		Object: make(Object),
+	}
 	// Read traits flag
 	b, err := r.ReadByte()
 	if err != nil {
-		return nil, err
+		return TypedObject{Object: nil}, err
 	}
 	if b != 0x0b {
-		return nil, errors.New("Unsupported type: traits object")
+		return TypedObject{Object: nil}, errors.New("Unsupported type: traits object")
 	}
 	// Read empty string
 	b, err = r.ReadByte()
 	if err != nil {
-		return nil, err
+		return TypedObject{Object: nil}, err
 	}
 	if b != 0x01 {
-		return nil, errors.New("Unsupported type: traits object")
+		return TypedObject{
+			Object: nil,
+		}, errors.New("Unsupported type: traits object")
 	}
 	for {
 		name, err := AMF3_ReadObjectName(r)
 		if err != nil {
-			return nil, err
+			return TypedObject{Object: nil}, err
 		}
 		if name == "" {
 			break
 		}
-		if _, ok := obj[name]; ok {
-			return nil, errors.New("object-property exists")
+		if _, ok := obj.Object[name]; ok {
+			return TypedObject{Object: nil}, errors.New("object-property exists")
 		}
 		value, err := AMF3_ReadValue(r)
 		if err != nil {
-			return nil, err
+			return TypedObject{Object: nil}, err
 		}
-		obj[name] = value
+		obj.Object[name] = value
 	}
 	return obj, nil
+}
+
+func AMF3_ReadObjectProperty(r Reader) (TypedObject, error) {
+	obj := TypedObject{
+		Object: make(Object),
+	}
+	handle, err := AMF3_ReadU29(r)
+	if err != nil {
+		return obj, err
+	}
+	inline := ((handle & 1) != 0)
+	handle = handle >> 1
+
+	if inline {
+		inlineDefine := ((handle & 1) != 0)
+		handle = handle >> 1
+		if inlineDefine {
+			obj.ObjectType, err = AMF3_ReadObjectName(r)
+			if err != nil {
+				return obj, err
+			}
+			obj.Externalizable = ((handle & 1) != 0)
+			handle = handle >> 1
+			obj.Dynamic = ((handle & 1) != 0)
+			handle = handle >> 1
+			for i := 0; i < int(handle); i++ {
+				str, err := AMF3_ReadObjectName(r)
+				if err != nil {
+					return obj, err
+				}
+				obj.Members = append(obj.Members, str)
+			}
+
+		} else {
+			fmt.Println("No Inline Define")
+		}
+
+		if obj.Externalizable {
+			switch obj.ObjectType {
+			case "DSK":
+				fmt.Println("DSK OH NO")
+				return obj, errors.New("DSK")
+			case "DSA":
+				fmt.Println("DSA OH NO")
+				return obj, errors.New("DSA")
+			case "flex.messaging.io.ArrayCollection":
+				fmt.Println("flex.messaging.io.ArrayCollection OH NO")
+				return obj, errors.New("flex.messaging.io.ArrayCollection")
+			case "com.riotgames.platform.systemstate.ClientSystemStatesNotification", "com.riotgames.platform.broadcast.BroadcastNotification":
+				fmt.Println("RIOT OH NO")
+				return obj, errors.New("RIOT")
+			default:
+				fmt.Println("NOT IMPLEMETENED")
+				return obj, errors.New("NOT IMPLEMETENED")
+
+			}
+
+		} else {
+			for {
+				name, err := AMF3_ReadObjectName(r)
+				if err != nil {
+					return TypedObject{Object: nil}, err
+				}
+				if name == "" {
+					break
+				}
+				if _, ok := obj.Object[name]; ok {
+					return TypedObject{Object: nil}, errors.New("object-property exists")
+				}
+				value, err := AMF3_ReadValue(r)
+				if err != nil {
+					return TypedObject{Object: nil}, err
+				}
+				obj.Object[name] = value
+			}
+			if obj.Dynamic {
+				fmt.Println("OH NO DYMAIC")
+				return obj, errors.New("DYNAMIC")
+			}
+		}
+
+	}
+	return obj, err
+
 }
 
 func AMF3_ReadByteArray(r Reader) ([]byte, error) {
