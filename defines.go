@@ -70,6 +70,10 @@ type Object map[string]interface{}
 
 type TypedObject struct {
 	Object
+	ObjectType string
+}
+
+type ClassDefinition struct {
 	ObjectType     string
 	Externalizable bool
 	Dynamic        bool

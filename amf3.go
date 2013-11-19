@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"time"
 )
 
 //-----------------------------------------------------------------------
@@ -120,6 +121,15 @@ func AMF3_WriteObjectEndMarker(w Writer) (n int, err error) {
 func AMF3_WriteObjectName(w Writer, name string) (n int, err error) {
 	return AMF3_WriteUTF8(w, name)
 }
+
+// func AMF3_WriteTime(w Writer, t time.Time) (n int, err error) {
+// 	err = w.WriteByte(0x01)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	n = 1
+// 	AMF3_WriteDouble(w, num)
+// }
 
 func AMF3_WriteAssociativeArray(w Writer, obj Object) (n int, err error) {
 	err = w.WriteByte(0x01) // Empty string
@@ -362,6 +372,9 @@ func AMF3_WriteValue(w Writer, value interface{}) (n int, err error) {
 		return AMF3_WriteObject(w, vt)
 	} else if vt, ok := value.(TypedObject); ok {
 		return AMF3_WriteTypedObject(w, vt)
+	} else if _, ok := value.(time.Time); ok {
+		fmt.Println("TODO write times")
+		//return AMF3_WriteTime(w, vt)
 	} else if vt, ok := value.([]interface{}); ok {
 		fmt.Printf("Todo: WriteValue: %+v\n", vt)
 	}
@@ -463,7 +476,7 @@ func AMF3_ReadObject(r Reader) (obj Object, err error) {
 	return objProp.Object, err
 }
 
-func AMF3_ReadOldObjectProperty(r Reader) (TypedObject, error) {
+func AMF3_ReadObjectProperty(r Reader) (TypedObject, error) {
 	obj := TypedObject{
 		Object: make(Object),
 	}
@@ -503,90 +516,6 @@ func AMF3_ReadOldObjectProperty(r Reader) (TypedObject, error) {
 		obj.Object[name] = value
 	}
 	return obj, nil
-}
-
-func AMF3_ReadObjectProperty(r Reader) (TypedObject, error) {
-	obj := TypedObject{
-		Object: make(Object),
-	}
-	handle, err := AMF3_ReadU29(r)
-	if err != nil {
-		return obj, err
-	}
-	inline := ((handle & 1) != 0)
-	handle = handle >> 1
-
-	if inline {
-		inlineDefine := ((handle & 1) != 0)
-		handle = handle >> 1
-		if inlineDefine {
-			obj.ObjectType, err = AMF3_ReadObjectName(r)
-			if err != nil {
-				return obj, err
-			}
-			obj.Externalizable = ((handle & 1) != 0)
-			handle = handle >> 1
-			obj.Dynamic = ((handle & 1) != 0)
-			handle = handle >> 1
-			for i := 0; i < int(handle); i++ {
-				str, err := AMF3_ReadObjectName(r)
-				if err != nil {
-					return obj, err
-				}
-				obj.Members = append(obj.Members, str)
-			}
-
-		} else {
-			fmt.Println("No Inline Define")
-		}
-
-		if obj.Externalizable {
-			switch obj.ObjectType {
-			case "DSK":
-				fmt.Println("DSK OH NO")
-				return obj, errors.New("DSK")
-			case "DSA":
-				fmt.Println("DSA OH NO")
-				return obj, errors.New("DSA")
-			case "flex.messaging.io.ArrayCollection":
-				fmt.Println("flex.messaging.io.ArrayCollection OH NO")
-				return obj, errors.New("flex.messaging.io.ArrayCollection")
-			case "com.riotgames.platform.systemstate.ClientSystemStatesNotification", "com.riotgames.platform.broadcast.BroadcastNotification":
-				fmt.Println("RIOT OH NO")
-				return obj, errors.New("RIOT")
-			default:
-				fmt.Println("NOT IMPLEMETENED")
-				return obj, errors.New("NOT IMPLEMETENED")
-
-			}
-
-		} else {
-			for {
-				name, err := AMF3_ReadObjectName(r)
-				if err != nil {
-					return TypedObject{Object: nil}, err
-				}
-				if name == "" {
-					break
-				}
-				if _, ok := obj.Object[name]; ok {
-					return TypedObject{Object: nil}, errors.New("object-property exists")
-				}
-				value, err := AMF3_ReadValue(r)
-				if err != nil {
-					return TypedObject{Object: nil}, err
-				}
-				obj.Object[name] = value
-			}
-			if obj.Dynamic {
-				fmt.Println("OH NO DYMAIC")
-				return obj, errors.New("DYNAMIC")
-			}
-		}
-
-	}
-	return obj, err
-
 }
 
 func AMF3_ReadByteArray(r Reader) ([]byte, error) {
