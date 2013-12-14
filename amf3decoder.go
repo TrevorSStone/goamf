@@ -143,7 +143,7 @@ func (decoder *AMF3Decoder) AMF3_ReadObjectProperty(r Reader) (TypedObject, erro
 				}
 				cd.Members = append(cd.Members, str)
 			}
-			decoder.objectReferences = append(decoder.objectReferences, cd)
+			decoder.classReferences = append(decoder.classReferences, cd)
 		} else {
 			cd = decoder.classReferences[handle]
 		}
@@ -158,8 +158,12 @@ func (decoder *AMF3Decoder) AMF3_ReadObjectProperty(r Reader) (TypedObject, erro
 			case "DSA":
 				return decoder.readDSA(r)
 			case "flex.messaging.io.ArrayCollection":
-				fmt.Println("flex.messaging.io.ArrayCollection OH NO")
-				return obj, errors.New("flex.messaging.io.ArrayCollection")
+				obj.ObjectType = "flex.messaging.io.ArrayCollection"
+				o, err := decoder.AMF3_ReadValue(r)
+				obj.Object = Object{
+					"array": o,
+				}
+				return obj, err
 			case "com.riotgames.platform.systemstate.ClientSystemStatesNotification", "com.riotgames.platform.broadcast.BroadcastNotification":
 				fmt.Println("RIOT OH NO")
 				return obj, errors.New("RIOT")
@@ -200,6 +204,9 @@ func (decoder *AMF3Decoder) AMF3_ReadObjectProperty(r Reader) (TypedObject, erro
 		}
 
 	} else {
+		if int(handle) >= len(decoder.objectReferences) {
+			return obj, errors.New("Not enough References")
+		}
 		objref := decoder.objectReferences[handle]
 		if val, ok := objref.(TypedObject); ok {
 			return val, err
@@ -432,8 +439,49 @@ func (decoder *AMF3Decoder) AMF3_ReadDate(r Reader) (time.Time, error) {
 	}
 }
 
+func (decoder *AMF3Decoder) AMF3_ReadArray(r Reader) (objarr []interface{}, err error) {
+
+	var handle uint32
+	handle, err = decoder.AMF3_ReadU29(r)
+	if err != nil {
+		return objarr, err
+	}
+	reference := handle&uint32(0x01) == uint32(0)
+	handle = handle >> 1
+	if reference {
+
+		if obj, ok := decoder.objectReferences[handle].([]interface{}); ok {
+			return obj, nil
+		} else {
+			fmt.Println("Could Not Read Array Reference")
+			return obj, errors.New("Could Not Read Array Reference")
+		}
+
+	}
+	key, err := decoder.AMF3_ReadObjectName(r)
+	if err != nil {
+		return objarr, err
+	}
+	if key != "" {
+		return objarr, errors.New("Associative arrays are not supported")
+	}
+	objarr = make([]interface{}, int(handle))
+	decoder.objectReferences = append(decoder.objectReferences, objarr)
+
+	for i := 0; i < int(handle); i++ {
+
+		objarr[i], err = decoder.AMF3_ReadValue(r)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}
+
+	return objarr, nil
+}
+
 func (decoder *AMF3Decoder) AMF3_ReadValue(r Reader) (value interface{}, err error) {
 	marker, err := ReadMarker(r)
+
 	if err != nil {
 		return 0, err
 	}
@@ -455,7 +503,7 @@ func (decoder *AMF3Decoder) AMF3_ReadValue(r Reader) (value interface{}, err err
 	case AMF3_STRING_MARKER:
 		return decoder.AMF3_ReadUTF8(r)
 	case AMF3_ARRAY_MARKER:
-		// Todo: read array
+		return decoder.AMF3_ReadArray(r)
 	case AMF3_OBJECT_MARKER:
 		return decoder.AMF3_ReadObjectProperty(r)
 	case AMF3_BYTEARRAY_MARKER:
